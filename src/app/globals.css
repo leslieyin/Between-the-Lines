@@ -1,0 +1,148 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────
+   深夜金主题
+   深蓝紫的「夜里」，金色是唯一的光源，正文用暖白。
+   危险等级用一条从青绿到朱红的色阶，和金色刻意区分开 ——
+   金色在这个界面里代表「信息」，红色代表「该紧张了」，两者不能混。
+   ───────────────────────────────────────────────────────────── */
+@theme {
+  --color-night: #110c22;
+  --color-night-soft: #191330;
+  --color-night-card: #211a3c;
+  --color-night-edge: #2e2549;
+
+  --color-gold: #d8b56d;
+  --color-gold-bright: #f3dfa9;
+  --color-gold-dim: #7a6535;
+  --color-gold-quiet: #b1995f;
+
+  --color-ink: #f5f0e6;
+  --color-ink-soft: #b4acc2;
+  --color-ink-faint: #7a7390;
+
+  --color-danger-0: #5fbf95;
+  --color-danger-1: #d8b56d;
+  --color-danger-2: #e08b4a;
+  --color-danger-3: #d9534f;
+
+  --font-display: "Cinzel", "Noto Serif SC", ui-serif, Georgia, serif;
+  --font-sans: "Noto Serif SC", ui-serif, "Songti SC", Georgia, serif;
+
+  --radius-card: 18px;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-night);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* 夜色底纹：两团极淡的金光 + 一层细网格。存在感必须低，不能抢正文。 */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(58% 42% at 18% -6%, rgba(216, 181, 109, 0.13), transparent 68%),
+    radial-gradient(46% 38% at 92% 4%, rgba(120, 96, 190, 0.14), transparent 70%),
+    linear-gradient(180deg, #110c22, #0d0919 62%, #0a0714);
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.35;
+  background-image:
+    linear-gradient(rgba(216, 181, 109, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(216, 181, 109, 0.035) 1px, transparent 1px);
+  background-size: 46px 46px;
+  mask-image: radial-gradient(70% 60% at 50% 0%, #000 20%, transparent 100%);
+}
+
+/* 卡片：一层纸背 + 一道金色描边，像摊开在桌上的牌 */
+.cardback {
+  background:
+    linear-gradient(168deg, rgba(46, 37, 76, 0.55), rgba(25, 19, 48, 0.92) 45%, rgba(19, 14, 37, 0.96));
+  border: 1px solid var(--color-night-edge);
+  box-shadow:
+    0 24px 56px -30px rgba(0, 0, 0, 0.95),
+    inset 0 1px 0 rgba(216, 181, 109, 0.07);
+}
+
+.gold-rule {
+  background: linear-gradient(90deg, transparent, rgba(216, 181, 109, 0.55), transparent);
+  height: 1px;
+}
+
+/* 概率条：底色是「未命中」，金色是「命中」，宽度由 Jev 的概率直接驱动 */
+.prob-track {
+  background: rgba(122, 101, 53, 0.18);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.prob-fill {
+  background: linear-gradient(90deg, var(--color-gold-dim), var(--color-gold));
+  border-radius: 999px;
+  transition: width 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 翻牌入场：只做一次，18ms/张 的错峰让视线跟着往下走 */
+@keyframes deal-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) rotateX(-12deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.deal-in {
+  animation: deal-in 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deal-in {
+    animation: none;
+  }
+  .prob-fill {
+    transition: none;
+  }
+  * {
+    scroll-behavior: auto !important;
+  }
+}
+
+/* 引用原文时的引号浮雕，让「她说的那句」和「算出来的数字」在视觉上分开 */
+.quote {
+  font-family: var(--font-display);
+  letter-spacing: 0.012em;
+}
+
+.tabnum {
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: rgba(216, 181, 109, 0.3);
+}
+
+*:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

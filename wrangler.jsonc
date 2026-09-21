@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "huawaiyin",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2025-04-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "huawaiyin-db",
+      "_comment_database_id": "占位值。首次部署时 deploy 脚本（或 Cloudflare 一键部署流程）会创建数据库并把真实 id 写回这里。手填的话去控制台 D1 页面复制 UUID。",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "vars": {
+    "TYPESAFE_MODEL": "jev-latest",
+    "TYPESAFE_BASE_URL": "https://api.typesafe.ai/v1",
+    "ANALYZE_MAX_CHARS": "8000",
+    "ANALYZE_MAX_LINES": "40",
+    "ANALYZE_MAX_ANALYZED_LINES": "16",
+    "ANALYZE_GROUP_SIZE": "4",
+    "RATE_LIMIT_PER_HOUR": "20"
+  }
+}

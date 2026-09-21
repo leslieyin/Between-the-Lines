@@ -1,0 +1,62 @@
+{
+  "name": "huawaiyin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "话外音 · Between the Lines —— 用 Jev（TypeSafe System One）逐句算聊天记录里的真实意图，部署在 Cloudflare Workers + D1",
+  "license": "MIT",
+  "keywords": [
+    "cloudflare-workers",
+    "d1",
+    "nextjs",
+    "opennext",
+    "typesafe",
+    "jev",
+    "llm-judgment"
+  ],
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "node scripts/cf.mjs build",
+    "deploy": "node scripts/cf.mjs deploy",
+    "deploy:local": "node scripts/deploy.mjs",
+    "build:next": "next build",
+    "start": "next start -p 3000",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node scripts/smoke.mjs",
+    "cf:build": "node scripts/cf.mjs build",
+    "cf:preview": "node scripts/cf.mjs build && node scripts/cf.mjs preview",
+    "cf:deploy": "node scripts/cf.mjs deploy",
+    "cf:typegen": "wrangler types --env-interface CloudflareEnv"
+  },
+  "dependencies": {
+    "@opennextjs/cloudflare": "^1",
+    "next": "^15.5.25",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "postcss": "^8",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "wrangler": "^4"
+  },
+  "cloudflare": {
+    "label": "话外音 · Between the Lines",
+    "products": [
+      "Workers",
+      "D1"
+    ],
+    "bindings": {
+      "TYPESAFE_API_KEY": {
+        "description": "TypeSafe 的 API Key（Jev 模型）。到 https://typesafe.ai 免费申请。留空的话页面会跑在内置的演示模式上。"
+      }
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
