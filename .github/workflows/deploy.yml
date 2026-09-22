@@ -1,0 +1,83 @@
+# 仓库一推到 main，就自动构建并部署到 Cloudflare Workers（huawaiyin）。
+#
+# 这个项目的特殊点：真实的 D1 database_id 和自定义域在 gitignore 的
+# wrangler.local.jsonc 里，开源仓库只留占位值。所以 CI 在部署前先用
+# 仓库的 wrangler.jsonc + 下面几个 Secret 现场生成 wrangler.local.jsonc，
+# 再走项目自带的 cf:build / cf:deploy（OpenNext 构建 + wrangler 部署）。
+#
+# 需要在仓库 Settings → Secrets and variables → Actions 里配置：
+#   D1_DATABASE_ID      真实的 D1 数据库 UUID（见 wrangler.local.jsonc 或控制台 D1 页）
+#   CLOUDFLARE_API_TOKEN  Cloudflare API Token，需 Workers Scripts:Edit + D1:Edit 权限
+#   CLOUDFLARE_ACCOUNT_ID 控制台右侧的 Account ID
+#   CUSTOM_DOMAIN        （可选）huawaiyin.yhz610.com —— 不填也能部署，已有路由会保留
+#   TYPESAFE_API_KEY     （可选）填了就在 CI 里 wrangler secret put；不填则用控制台里已设的值
+
+name: Deploy to Cloudflare
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: cloudflare-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate wrangler.local.jsonc from secrets
+        env:
+          D1_ID: ${{ secrets.D1_DATABASE_ID }}
+          CUSTOM_DOMAIN: ${{ secrets.CUSTOM_DOMAIN }}
+        run: |
+          node - <<'EOF'
+          const fs = require('fs');
+          if (!process.env.D1_ID) {
+            console.error('缺少 Secret: D1_DATABASE_ID');
+            process.exit(1);
+          }
+          let c = fs.readFileSync('wrangler.jsonc', 'utf8');
+          c = c.replace(/"database_id"\s*:\s*"[^"]*"/, `"database_id": "${process.env.D1_ID}"`);
+          const domain = process.env.CUSTOM_DOMAIN;
+          if (domain && !/^\s*"routes"/m.test(c)) {
+            const block = `  "routes": [\n    { "pattern": "${domain}", "custom_domain": true }\n  ],\n`;
+            c = c.replace(/^(\{\s*\r?\n)/, `$1${block}`);
+          }
+          fs.writeFileSync('wrangler.local.jsonc', c);
+          console.log('已生成 wrangler.local.jsonc（database_id 已替换' + (domain ? '，已带自定义域' : '') + '）');
+          EOF
+
+      - name: Build (OpenNext)
+        run: npm run cf:build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+      - name: Deploy to Cloudflare Workers
+        run: npm run cf:deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NEXT_TELEMETRY_DISABLED: "1"
+
+      # 可选：把模型 Key 也纳入 CI（不填则沿用控制台里已设的 Secret，wrangler 部署不会清掉它）
+      - name: Upload TYPESAFE_API_KEY (optional)
+        if: ${{ secrets.TYPESAFE_API_KEY != '' }}
+        run: echo "${{ secrets.TYPESAFE_API_KEY }}" | npx wrangler secret put TYPESAFE_API_KEY --config wrangler.local.jsonc
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
