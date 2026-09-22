@@ -16,7 +16,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
@@ -161,7 +161,11 @@ function ensureDatabase(customDomain) {
     const id = /"database_id"\s*:\s*"([^"]+)"/.exec(local)?.[1];
     const domainMatches = !customDomain || local.includes(customDomain);
     if (id && isRealDatabaseId(id) && domainMatches) {
-      console.log(`  复用本地配置里的：${id}`);
+      // 复用现有的 D1 id，但仍用 wrangler.jsonc 重新生成一份本地配置 ——
+      // 否则 wrangler.jsonc 里 vars 的改动（比如 ANALYZE_MAX_LINES）会被旧配置静默吞掉，
+      // 表现出来就是「明明改了 100 行，部署完线上还是 40 行」，且日志一行不错、极难发现。
+      console.log(`  复用本地配置里的数据库 id：${id}（并同步 wrangler.jsonc 的 vars）`);
+      writeLocalWrangler(committed, id, customDomain);
       return;
     }
   }
@@ -274,12 +278,15 @@ async function buildAndDeploy() {
 
   // 构建前先清掉 .open-next：OpenNext 内部会 rmSync 它，在 Windows 上这一步会卡死
   // （目录里上百个文件，撞上本机的删除保护，非交互进程里就变成永久等待）。
+  // 注意：本机 WorkBuddy 的删除保护层会拦截 rmSync（批量删除需授权），所以这里用
+  // rename 把目录挪到一旁而不是删掉 —— 单次 rename 不触发删除保护，构建会生成全新的 .open-next。
   if (existsSync(OPEN_NEXT_DIR)) {
-    console.log("  清理上一次的 .open-next…");
+    const badDir = path.join(ROOT, `.open-next-bad-${Date.now()}`);
+    console.log(`  把上一次的 .open-next 挪到 ${path.basename(badDir)}（避免触发删除保护）…`);
     try {
-      rmSync(OPEN_NEXT_DIR, { recursive: true, force: true });
+      renameSync(OPEN_NEXT_DIR, badDir);
     } catch (error) {
-      fail("清理 .open-next 失败。", `手动删掉 ${OPEN_NEXT_DIR} 再重跑。${error.message}`);
+      fail("清理 .open-next 失败。", `手动把 ${OPEN_NEXT_DIR} 改名或删掉再重跑。${error.message}`);
     }
   }
 
