@@ -2,7 +2,7 @@
   "name": "huawaiyin",
   "version": "0.1.0",
   "private": true,
-  "description": "话外音 · Between the Lines —— 用 Jev（TypeSafe System One）逐句算聊天记录里的真实意图，部署在 Cloudflare Workers + D1",
+  "description": "懂你 · Between the Lines —— 用 Jev（TypeSafe System One）逐句算聊天记录里的真实意图，部署在 Cloudflare Workers + D1",
   "license": "MIT",
   "keywords": [
     "cloudflare-workers",
@@ -44,7 +44,7 @@
     "wrangler": "^4"
   },
   "cloudflare": {
-    "label": "话外音 · Between the Lines",
+    "label": "懂你 · Between the Lines",
     "products": [
       "Workers",
       "D1"

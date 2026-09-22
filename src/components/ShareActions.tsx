@@ -33,7 +33,7 @@ export function ShareActions({ record }: { record: AnalysisRecord }) {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `话外音-${record.id.slice(0, 6)}.png`;
+      anchor.download = `懂你-${record.id.slice(0, 6)}.png`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();

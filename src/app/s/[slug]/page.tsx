@@ -12,7 +12,7 @@ type Props = { params: Promise<{ slug: string }> };
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   return {
-    title: "有人给你看了一段对话的解读 · 话外音",
+    title: "有人给你看了一段对话的解读 · 懂你",
     description: "逐句算出真实意图、她需要什么、危险等级，由 Jev 模型计算。",
     robots: { index: false, follow: false, nocache: true },
     alternates: { canonical: `/s/${slug}` },
@@ -38,7 +38,7 @@ export default async function SharePage({ params }: Props) {
     <div className="space-y-6">
       <header>
         <p className="font-display mb-3 text-[10px] tracking-[0.3em] text-gold-quiet uppercase">
-          分享的解读 · 话外音
+          分享的解读 · 懂你
         </p>
         <h1 className="font-display text-[26px] leading-[1.35] sm:text-[32px]" style={{ color: "var(--color-ink)" }}>
           有人把一段对话

@@ -135,7 +135,7 @@ async function main() {
   const sharePage = await fetch(`${BASE}/s/${slug}`);
   const html = await sharePage.text();
   check("GET /s/:slug 分享页渲染成功", sharePage.status === 200, `status=${sharePage.status}`);
-  check("分享页里能看到解读内容", html.includes("话外音") || html.includes("她真正想说的"));
+  check("分享页里能看到解读内容", html.includes("懂你") || html.includes("她真正想说的"));
 
   const badSlug = await fetch(`${BASE}/s/zzzzzzzzzzzz`);
   check("无效 slug 返回 404", badSlug.status === 404, `status=${badSlug.status}`);

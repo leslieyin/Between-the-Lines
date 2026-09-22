@@ -216,7 +216,7 @@ export async function renderChatShot(input: ShotInput): Promise<Blob> {
   // 副标题（金色短字，点明这是解读版截图）
   ctx.fillStyle = COLORS.gold;
   ctx.font = font(12, "600");
-  ctx.fillText("话外音 · 逐句解读", WIDTH / 2, 72);
+  ctx.fillText("懂你 · 逐句解读", WIDTH / 2, 72);
 
   // 消息与解读
   ctx.textBaseline = "alphabetic";
@@ -299,7 +299,7 @@ export async function renderChatShot(input: ShotInput): Promise<Blob> {
     ctx.fillStyle = COLORS.muted;
     ctx.font = font(11, "600");
     ctx.textAlign = "left";
-    ctx.fillText("话外音 · AI 解读", cardX + 18, y + 28);
+    ctx.fillText("懂你 · AI 解读", cardX + 18, y + 28);
 
     ctx.fillStyle = meta.color;
     ctx.textAlign = "right";
@@ -332,7 +332,7 @@ export async function renderChatShot(input: ShotInput): Promise<Blob> {
   ctx.fillStyle = COLORS.muted;
   ctx.font = font(12);
   ctx.textAlign = "center";
-  ctx.fillText("结论由 Jev 模型算出，不是话术 · 话外音", WIDTH / 2, footY + 32);
+  ctx.fillText("结论由 Jev 模型算出，不是话术 · 懂你", WIDTH / 2, footY + 32);
   ctx.fillStyle = COLORS.gold;
   ctx.font = font(11, "600");
   ctx.fillText("每句话，都值得算一遍", WIDTH / 2, footY + 54);
