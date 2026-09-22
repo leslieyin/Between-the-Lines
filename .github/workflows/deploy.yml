@@ -10,7 +10,6 @@
 #   CLOUDFLARE_API_TOKEN  Cloudflare API Token，需 Workers Scripts:Edit + D1:Edit 权限
 #   CLOUDFLARE_ACCOUNT_ID 控制台右侧的 Account ID
 #   CUSTOM_DOMAIN        （可选）huawaiyin.yhz610.com —— 不填也能部署，已有路由会保留
-#   TYPESAFE_API_KEY     （可选）填了就在 CI 里 wrangler secret put；不填则用控制台里已设的值
 
 name: Deploy to Cloudflare
 
@@ -73,11 +72,3 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           NEXT_TELEMETRY_DISABLED: "1"
-
-      # 可选：把模型 Key 也纳入 CI（不填则沿用控制台里已设的 Secret，wrangler 部署不会清掉它）
-      - name: Upload TYPESAFE_API_KEY (optional)
-        if: ${{ secrets.TYPESAFE_API_KEY != '' }}
-        run: echo "${{ secrets.TYPESAFE_API_KEY }}" | npx wrangler secret put TYPESAFE_API_KEY --config wrangler.local.jsonc
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
