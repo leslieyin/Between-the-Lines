@@ -206,6 +206,19 @@ function ensureDatabase(customDomain) {
 
 /** 把真实 id（以及可选的自定义域）注入一份本地配置。提交进仓库的那份保持原样。 */
 function writeLocalWrangler(committedConfig, uuid, customDomain) {
+  // 如果没显式给域名，但本地配置里已经绑了自定义域，就保留它。
+  // 否则每次 regenerating 都会把 routes 清掉 —— 仓库那份 wrangler.jsonc 把 routes 注释掉了，
+  // 重新生成时不会带进来，表现就是「每次部署自定义域都被 reset」。
+  let domainToUse = customDomain;
+  if (!domainToUse && existsSync(LOCAL_WRANGLER_FILE)) {
+    const local = readFileSync(LOCAL_WRANGLER_FILE, "utf8");
+    const existing = /^\s*"routes"\s*:\s*\[[\s\S]*?"pattern"\s*:\s*"([^"]+)"/m.exec(local)?.[1];
+    if (existing) {
+      domainToUse = existing;
+      console.log(`  保留本地配置里的自定义域：${existing}（.dev.vars 未指定 CUSTOM_DOMAIN）`);
+    }
+  }
+
   const header = [
     "// 本文件由 npm run deploy:local 自动生成，已 gitignore，**不要提交**。",
     "// 内容 = wrangler.jsonc + 真实的 D1 database_id + .dev.vars 里的 CUSTOM_DOMAIN。",
@@ -216,11 +229,11 @@ function writeLocalWrangler(committedConfig, uuid, customDomain) {
 
   let body = committedConfig.replace(/"database_id"\s*:\s*"[^"]*"/, `"database_id": "${uuid}"`);
 
-  if (customDomain) {
+  if (domainToUse) {
     const block = [
       `  "routes": [`,
       `    {`,
-      `      "pattern": "${customDomain}",`,
+      `      "pattern": "${domainToUse}",`,
       `      "custom_domain": true`,
       `    }`,
       `  ],`,
@@ -233,9 +246,9 @@ function writeLocalWrangler(committedConfig, uuid, customDomain) {
     // `"pattern":`，不锚定的话会误命中注释，结果 routes 根本没插进去 —— 表现出来就是
     // 「明明配了 CUSTOM_DOMAIN，部署完域名却没绑上」，且日志一行不错，极难发现。
     body = /^\s*"routes"\s*:/m.test(body)
-      ? body.replace(/^(\s*)"pattern"\s*:\s*"[^"]*"/m, `$1"pattern": "${customDomain}"`)
+      ? body.replace(/^(\s*)"pattern"\s*:\s*"[^"]*"/m, `$1"pattern": "${domainToUse}"`)
       : body.replace(/^(\{\s*\r?\n)/, `$1${block}`);
-    console.log(`  已带上自定义域：${customDomain}`);
+    console.log(`  已带上自定义域：${domainToUse}`);
   }
 
   writeFileSync(LOCAL_WRANGLER_FILE, header + body, "utf8");

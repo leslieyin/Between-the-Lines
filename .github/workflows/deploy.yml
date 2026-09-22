@@ -9,7 +9,9 @@
 #   D1_DATABASE_ID      真实的 D1 数据库 UUID（见 wrangler.local.jsonc 或控制台 D1 页）
 #   CLOUDFLARE_API_TOKEN  Cloudflare API Token，需 Workers Scripts:Edit + D1:Edit 权限
 #   CLOUDFLARE_ACCOUNT_ID 控制台右侧的 Account ID
-#   CUSTOM_DOMAIN        （可选）huawaiyin.yhz610.com —— 不填也能部署，已有路由会保留
+#   CUSTOM_DOMAIN        （建议填）dongni.yhz610.com —— 不填的话 wrangler 会同步掉 routes，
+#                        导致已绑的自定义域失效。CI 环境里 wrangler.local.jsonc 不存在，
+#                        只能靠这个 Secret 知道该绑哪个域。
 #   TYPESAFE_API_KEY     （可选）模型密钥。建议填上，否则每次 push 后还要去 Cloudflare 控制台补。
 
 name: Deploy to Cloudflare
