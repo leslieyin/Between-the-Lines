@@ -40,7 +40,7 @@
     "TYPESAFE_MODEL": "jev-latest",
     "TYPESAFE_BASE_URL": "https://api.typesafe.ai/v1",
     "ANALYZE_MAX_CHARS": "8000",
-    "ANALYZE_MAX_LINES": "40",
+    "ANALYZE_MAX_LINES": "100",
     "ANALYZE_MAX_ANALYZED_LINES": "16",
     "ANALYZE_GROUP_SIZE": "4",
     "RATE_LIMIT_PER_HOUR": "20"

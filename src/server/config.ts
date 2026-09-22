@@ -125,7 +125,7 @@ export function getConfig(): AppConfig {
     demoMode,
     limits: {
       maxChars: readInt("ANALYZE_MAX_CHARS", 8000),
-      maxLines: readInt("ANALYZE_MAX_LINES", 40),
+      maxLines: readInt("ANALYZE_MAX_LINES", 100),
       maxAnalyzedLines: readInt("ANALYZE_MAX_ANALYZED_LINES", 16),
       groupSize: readInt("ANALYZE_GROUP_SIZE", 4),
       ratePerHour: readInt("RATE_LIMIT_PER_HOUR", 20),

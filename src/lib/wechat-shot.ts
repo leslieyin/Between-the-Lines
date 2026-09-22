@@ -10,14 +10,15 @@
  *
  * 画的是一张「聊天记录 + 每句下面附一条解读」的长图。刻意保留微信原本的绿白气泡配色，
  * 因为这张图的价值在于「看起来像日常截图」，而不是看起来像一份报告。
+ * 这一段只在不破坏微信观感的前提下做精致化：间距、字体层级、解读卡留白、危险色竖条。
  */
 
 import { dangerMeta } from "@/features/analyze/presentation";
 import type { LineAnalysis, ParsedLine } from "@/features/analyze/types";
 
 const WIDTH = 750;
-const PAD = 26;
-const BUBBLE_MAX = Math.round(WIDTH * 0.66);
+const PAD = 24;
+const BUBBLE_MAX = Math.round(WIDTH * 0.68);
 const FONT_STACK =
   '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif';
 
@@ -28,10 +29,12 @@ const COLORS = {
   herBubble: "#ffffff",
   meBubble: "#95ec69",
   text: "#191919",
-  muted: "#8b8b8b",
+  muted: "#9a9a9a",
   card: "#ffffff",
+  cardBorder: "#ececec",
   gold: "#b08b3e",
   foot: "#f7f7f7",
+  dayPill: "#c9c9c9",
 };
 
 type Item =
@@ -41,6 +44,11 @@ type Item =
 
 function font(size: number, weight: "400" | "500" | "600" = "400"): string {
   return `${weight} ${size}px ${FONT_STACK}`;
+}
+
+function measure(ctx: CanvasRenderingContext2D, text: string, size: number, weight: "400" | "500" | "600" = "400"): number {
+  ctx.font = font(size, weight);
+  return ctx.measureText(text).width;
 }
 
 /** 把一段文字按最大宽度折成若干行。canvas 没有自动换行，必须自己算。 */
@@ -73,8 +81,41 @@ function wrap(
   return rows.length > 0 ? rows : [""];
 }
 
-const MSG_LINE_HEIGHT = 26;
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+): void {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+}
+
+/** 轻量阴影，让气泡和卡片从灰底里浮起来一点点（微信本身很平，这里只点到为止）。 */
+function softShadow(ctx: CanvasRenderingContext2D, blur = 8, alpha = 0.06) {
+  ctx.shadowColor = `rgba(0,0,0,${alpha})`;
+  ctx.shadowBlur = blur;
+  ctx.shadowOffsetY = 1;
+}
+
+function clearShadow(ctx: CanvasRenderingContext2D) {
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+}
+
+const MSG_LINE_HEIGHT = 27;
 const MSG_FONT = 16;
+const MSG_GAP = 26; // 气泡与下一行之间的留白
+const CARD_LINE_HEIGHT = 23;
 
 type ShotInput = {
   herName: string;
@@ -88,22 +129,23 @@ export async function renderChatShot(input: ShotInput): Promise<Blob> {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("这个浏览器不支持 canvas，直接截屏也一样。");
+  ctx.imageSmoothingEnabled = true;
 
   const analysisByIndex = new Map(input.analyzed.map((a) => [a.index, a]));
-  const transcript = input.lines.slice(-(input.maxMessages ?? 22));
+  const transcript = input.lines.slice(-(input.maxMessages ?? 40));
 
   // ── 第一遍：排版，算出每一块的高度和总高 ──────────────────────────────
-  const items: Item[] = [{ kind: "day", label: "今天", height: 44 }];
+  const items: Item[] = [{ kind: "day", label: "今天", height: 50 }];
 
   for (const line of transcript) {
     if (line.text.trim() === "") continue;
-    const rows = wrap(ctx, line.text, BUBBLE_MAX - 26, MSG_FONT);
+    const rows = wrap(ctx, line.text, BUBBLE_MAX - 28, MSG_FONT);
     items.push({
       kind: "msg",
       speaker: line.speaker,
       text: line.text,
       rows,
-      height: rows.length * MSG_LINE_HEIGHT + 20 + 10,
+      height: rows.length * MSG_LINE_HEIGHT + 20 + MSG_GAP,
     });
 
     const analysis = analysisByIndex.get(line.index);
@@ -115,24 +157,24 @@ export async function renderChatShot(input: ShotInput): Promise<Blob> {
         `她此刻需要：${analysis.need.label}`,
         `建议动作：${analysis.move.label}`,
       ];
-      const wrapped = noteRows.flatMap((row) => wrap(ctx, row, BUBBLE_MAX - 40, 14));
+      const wrapped = noteRows.flatMap((row) => wrap(ctx, row, BUBBLE_MAX - 36, 14));
       if (analysis.isIronic >= 0.5) {
         wrapped.unshift(
-          ...wrap(ctx, `⚑ 这句要反着听（${Math.round(analysis.isIronic * 100)}%）`, BUBBLE_MAX - 40, 14, "600"),
+          ...wrap(ctx, `⚑ 这句要反着听（${Math.round(analysis.isIronic * 100)}%）`, BUBBLE_MAX - 36, 14, "600"),
         );
       }
       items.push({
         kind: "note",
         analysis,
         rows: wrapped,
-        height: wrapped.length * 22 + 34 + 14,
+        height: wrapped.length * CARD_LINE_HEIGHT + 56,
       });
     }
   }
 
-  const topBarHeight = 104;
-  const footHeight = 78;
-  const bodyHeight = items.reduce((sum, item) => sum + item.height, 0) + 24;
+  const topBarHeight = 108;
+  const footHeight = 84;
+  const bodyHeight = items.reduce((sum, item) => sum + item.height, 0) + 20;
   const height = topBarHeight + bodyHeight + footHeight;
 
   const dpr = Math.min(2, typeof window === "undefined" ? 1 : window.devicePixelRatio || 1);
@@ -154,63 +196,79 @@ export async function renderChatShot(input: ShotInput): Promise<Blob> {
   ctx.lineTo(WIDTH, topBarHeight - 0.5);
   ctx.stroke();
 
+  // 返回箭头
+  ctx.strokeStyle = COLORS.text;
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(PAD + 10, 36);
+  ctx.lineTo(PAD, 36);
+  ctx.lineTo(PAD + 7, 29);
+  ctx.stroke();
+
+  // 标题
   ctx.fillStyle = COLORS.text;
-  ctx.font = font(20, "500");
+  ctx.font = font(19, "600");
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(input.herName || "她", WIDTH / 2, 34);
+  ctx.fillText(input.herName || "她", WIDTH / 2, 33);
 
-  ctx.fillStyle = COLORS.muted;
-  ctx.font = font(12);
-  ctx.textAlign = "left";
-  ctx.fillText("‹ 微信", PAD, 34);
-  ctx.textAlign = "right";
-  ctx.fillText("⋯", WIDTH - PAD, 34);
-
+  // 副标题（金色短字，点明这是解读版截图）
   ctx.fillStyle = COLORS.gold;
   ctx.font = font(12, "600");
-  ctx.textAlign = "center";
-  ctx.fillText("话外音 · 逐句解读", WIDTH / 2, 74);
+  ctx.fillText("话外音 · 逐句解读", WIDTH / 2, 72);
 
   // 消息与解读
-  let y = topBarHeight + 12;
   ctx.textBaseline = "alphabetic";
+  let y = topBarHeight + 10;
 
   for (const item of items) {
     if (item.kind === "day") {
-      ctx.fillStyle = COLORS.muted;
+      // 微信风格的居中日期小灰条
       ctx.font = font(12);
+      const w = measure(ctx, item.label, 12) + 28;
+      ctx.fillStyle = COLORS.dayPill;
+      roundRect(ctx, (WIDTH - w) / 2, y, w, 26, 13);
+      ctx.fill();
+      ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
-      ctx.fillText(item.label, WIDTH / 2, y + 22);
+      ctx.fillText(item.label, WIDTH / 2, y + 17);
       y += item.height;
       continue;
     }
 
     if (item.kind === "msg") {
-      // 除她以外的都画到右边。没指认「我是谁」时对方的发言会落在 unknown，
-      // 但这张图是一对一聊天截图，把它画到左边会和她的气泡混成一片。
       const isMe = item.speaker !== "her";
-      const bubbleW = Math.min(BUBBLE_MAX, Math.max(...item.rows.map((r) => measure(ctx, r, MSG_FONT))) + 26);
+      const bubbleW = Math.min(BUBBLE_MAX, Math.max(...item.rows.map((r) => measure(ctx, r, MSG_FONT))) + 28);
       const bubbleH = item.rows.length * MSG_LINE_HEIGHT + 20;
       const x = isMe ? WIDTH - PAD - bubbleW : PAD;
 
+      // 说话人小标签
+      ctx.fillStyle = COLORS.muted;
+      ctx.font = font(11);
+      ctx.textAlign = isMe ? "right" : "left";
+      ctx.fillText(isMe ? "我" : input.herName || "她", isMe ? WIDTH - PAD : PAD, y + 6);
+
+      softShadow(ctx, 6, 0.05);
       ctx.fillStyle = isMe ? COLORS.meBubble : COLORS.herBubble;
-      roundRect(ctx, x, y + 4, bubbleW, bubbleH, 8);
+      roundRect(ctx, x, y + 14, bubbleW, bubbleH, 10);
       ctx.fill();
+      clearShadow(ctx);
+
+      // 对方气泡加一道极淡描边，避免纯白融进灰底
+      if (!isMe) {
+        ctx.strokeStyle = "rgba(0,0,0,0.04)";
+        ctx.lineWidth = 1;
+        roundRect(ctx, x + 0.5, y + 14.5, bubbleW - 1, bubbleH - 1, 10);
+        ctx.stroke();
+      }
 
       ctx.fillStyle = COLORS.text;
       ctx.font = font(MSG_FONT);
       ctx.textAlign = "left";
       item.rows.forEach((row, i) => {
-        ctx.fillText(row, x + 13, y + 4 + 20 + i * MSG_LINE_HEIGHT);
+        ctx.fillText(row, x + 14, y + 14 + 20 + i * MSG_LINE_HEIGHT);
       });
-
-      // 说话人小标签，避免「谁的绿气泡」分不清
-      ctx.fillStyle = COLORS.muted;
-      ctx.font = font(11);
-      ctx.textAlign = isMe ? "right" : "left";
-      ctx.fillText(isMe ? "你" : input.herName || "她", isMe ? WIDTH - PAD : PAD, y + 2);
-      ctx.textAlign = "left";
       y += item.height;
       continue;
     }
@@ -218,33 +276,43 @@ export async function renderChatShot(input: ShotInput): Promise<Blob> {
     // 解读卡
     const meta = dangerMeta(item.analysis.danger.level);
     const cardX = PAD;
-    const cardW = BUBBLE_MAX + 44;
+    const cardW = BUBBLE_MAX + 40;
+    const cardH = item.height - 12;
+
+    softShadow(ctx, 8, 0.04);
     ctx.fillStyle = COLORS.card;
-    roundRect(ctx, cardX, y + 2, cardW, item.height - 10, 10);
+    roundRect(ctx, cardX, y + 6, cardW, cardH, 12);
     ctx.fill();
+    clearShadow(ctx);
 
-    // 左侧一道按危险等级上色的竖条：扫一眼就知道哪张卡最要紧
+    ctx.strokeStyle = COLORS.cardBorder;
+    ctx.lineWidth = 1;
+    roundRect(ctx, cardX + 0.5, y + 6.5, cardW - 1, cardH - 1, 12);
+    ctx.stroke();
+
+    // 左侧危险等级竖条：圆角挖空式（只画左端一小段，不超出卡片圆角）
     ctx.fillStyle = meta.color;
-    roundRect(ctx, cardX, y + 2, 4, item.height - 10, 2);
+    roundRect(ctx, cardX, y + 6, 5, cardH, 3);
     ctx.fill();
 
+    // 卡头：左标题 + 右危险标签
     ctx.fillStyle = COLORS.muted;
     ctx.font = font(11, "600");
-    ctx.fillText("话外音 · AI 解读", cardX + 16, y + 24);
+    ctx.textAlign = "left";
+    ctx.fillText("话外音 · AI 解读", cardX + 18, y + 28);
 
     ctx.fillStyle = meta.color;
     ctx.textAlign = "right";
     ctx.font = font(11, "600");
-    ctx.fillText(meta.short, cardX + cardW - 16, y + 24);
-    ctx.textAlign = "left";
+    ctx.fillText(meta.short, cardX + cardW - 18, y + 28);
 
-    ctx.font = font(14);
+    // 正文
+    ctx.textAlign = "left";
     item.rows.forEach((row, i) => {
       const isFlag = row.startsWith("⚑");
       ctx.fillStyle = isFlag ? meta.color : COLORS.text;
       ctx.font = font(14, isFlag ? "600" : "400");
-      ctx.fillText(row, cardX + 16, y + 48 + i * 22);
-      ctx.font = font(14);
+      ctx.fillText(row, cardX + 18, y + 54 + i * CARD_LINE_HEIGHT);
     });
 
     y += item.height;
@@ -255,6 +323,7 @@ export async function renderChatShot(input: ShotInput): Promise<Blob> {
   ctx.fillStyle = COLORS.foot;
   ctx.fillRect(0, footY, WIDTH, footHeight);
   ctx.strokeStyle = COLORS.line;
+  ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(0, footY + 0.5);
   ctx.lineTo(WIDTH, footY + 0.5);
@@ -274,27 +343,4 @@ export async function renderChatShot(input: ShotInput): Promise<Blob> {
       else reject(new Error("图没存下来，直接截屏也一样。"));
     }, "image/png");
   });
-}
-
-function measure(ctx: CanvasRenderingContext2D, text: string, size: number): number {
-  ctx.font = font(size);
-  return ctx.measureText(text).width;
-}
-
-function roundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-): void {
-  const radius = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.arcTo(x + w, y, x + w, y + h, radius);
-  ctx.arcTo(x + w, y + h, x, y + h, radius);
-  ctx.arcTo(x, y + h, x, y, radius);
-  ctx.arcTo(x, y, x + w, y, radius);
-  ctx.closePath();
 }
