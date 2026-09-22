@@ -13,6 +13,7 @@
  */
 
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { AppError, isAppError } from "./errors";
 
 export type AppConfig = {
   readonly typesafeApiKey: string | null;
@@ -30,18 +31,33 @@ export type AppConfig = {
   readonly isProd: boolean;
 };
 
-/** 从 process.env 与 Cloudflare 绑定里合并取一个字符串。 */
+/**
+ * 取一个环境变量。**Cloudflare 运行时绑定优先，process.env 兜底。**
+ *
+ * 顺序不能反过来 —— 这是踩出来的：`next build` 会把构建当时 process.env 里的值
+ * **快照进服务端 bundle**（`.env.local` 里非 NEXT_PUBLIC_ 的变量也会被带进去）。
+ * 如果优先读 process.env，那么在本机跑过一次构建之后，`.env.local` 里的
+ * `DEMO_MODE=true` 会一路渗进线上：控制台里明明配好了 Key，线上却在返回演示数据，
+ * 而且界面上完全看不出异常。
+ *
+ * 反过来就没有这个问题：
+ *  - 线上以 Worker 的 vars / secret 为权威，构建期的快照值覆盖不到它；
+ *  - 本机开发用 `.dev.vars`（wrangler 约定），同样经绑定读到，
+ *    而 `.dev.vars` 不会被 next build 快照，所以也不存在渗漏。
+ */
 function envValue(name: string): string | undefined {
-  const fromProcess = process.env[name];
-  if (fromProcess !== undefined && fromProcess.trim() !== "") return fromProcess.trim();
-
   try {
     const { env } = getCloudflareContext();
     const value = (env as unknown as Record<string, unknown>)[name];
     if (typeof value === "string" && value.trim() !== "") return value.trim();
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
   } catch {
-    // 不在请求上下文里（例如构建期），忽略
+    // 不在请求上下文里（例如构建期、或纯 Node 脚本），忽略
   }
+
+  const fromProcess = process.env[name];
+  if (fromProcess !== undefined && fromProcess.trim() !== "") return fromProcess.trim();
+
   return undefined;
 }
 
@@ -50,8 +66,11 @@ function readInt(name: string, fallback: number): number {
   if (raw === undefined) return fallback;
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error(
-      `配置项 ${name} 必须是正整数，当前值为 "${raw}"。请检查 .env.local（参考 .env.example）。`,
+    throw new AppError(
+      "CONFIG_MISSING",
+      503,
+      `配置项 ${name} 必须是正整数，当前是 "${raw}"。本地改 .dev.vars，线上改 wrangler.jsonc 的 vars 或控制台变量。`,
+      { context: { key: name } },
     );
   }
   return parsed;
@@ -63,7 +82,12 @@ function readBool(name: string, fallback: boolean): boolean {
   const normalized = raw.toLowerCase();
   if (["1", "true", "yes", "on"].includes(normalized)) return true;
   if (["0", "false", "no", "off"].includes(normalized)) return false;
-  throw new Error(`配置项 ${name} 必须是布尔值，当前值为 "${raw}"。`);
+  throw new AppError(
+    "CONFIG_MISSING",
+    503,
+    `配置项 ${name} 必须是布尔值，当前是 "${raw}"。本地改 .dev.vars，线上改 wrangler.jsonc 的 vars 或控制台变量。`,
+    { context: { key: name } },
+  );
 }
 
 let cached: AppConfig | null = null;
@@ -75,13 +99,22 @@ export function getConfig(): AppConfig {
   const demoMode = readBool("DEMO_MODE", false);
   const apiKey = envValue("TYPESAFE_API_KEY") ?? "";
 
+  // 快速失败：既没有 Key 又没开演示模式，立刻抛出一个**能直接展示给用户**的错误，
+  // 而不是让每个请求都在半路崩成 500。文案分环境，因为两种环境的正确做法完全不同。
   if (!apiKey && !demoMode) {
-    throw new Error(
-      [
-        "缺少 TYPESAFE_API_KEY。请在项目根目录创建 .env.local 并写入：",
-        "  TYPESAFE_API_KEY=ts_live_...",
-        "暂时没有 Key 的话，改成 DEMO_MODE=true 就能用内置样例跑通整个界面。",
-      ].join("\n"),
+    const runningOnWorkers =
+      typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers";
+
+    throw new AppError(
+      "CONFIG_MISSING",
+      503,
+      runningOnWorkers
+        ? "这个站点还没配置模型密钥。去 Cloudflare 控制台 → Workers → 你的 Worker → Settings → Variables and Secrets → Runtime variables and secrets，添加 TYPESAFE_API_KEY（类型选 Secret）。改完即生效，不需要重新部署。"
+        : "还没配置模型密钥。把 .dev.vars.example 复制成 .dev.vars 并填上 TYPESAFE_API_KEY；暂时没有 Key 的话，在 .dev.vars 里加上 DEMO_MODE=true 就能用内置样例跑通整个界面。",
+      {
+        internalMessage: "TYPESAFE_API_KEY is not set and DEMO_MODE is off",
+        context: { runningOnWorkers, demoMode },
+      },
     );
   }
 
@@ -111,6 +144,10 @@ export function probeConfig():
     const cfg = getConfig();
     return { ok: true, demoMode: cfg.demoMode, model: cfg.model };
   } catch (error) {
+    // 注意取的是 userMessage 而不是 error.message：
+    // AppError 把 message 留给了内部诊断信息（英文、含变量名），那是给日志看的，
+    // 而 /api/ready 是公开端点，返回内部文案既读不懂也没必要暴露。
+    if (isAppError(error)) return { ok: false, error: error.userMessage };
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 }

@@ -41,8 +41,8 @@
 ```bash
 npm install
 
-cp .env.example .env.local
-# 打开 .env.local：
+cp .dev.vars.example .dev.vars
+# 打开 .dev.vars：
 #   填上 TYPESAFE_API_KEY
 #   或先什么都不填、保持 DEMO_MODE=true —— 界面/交互/截图/历史/分享全链路都能跑，
 #   只是那些数字是按固定规则生成的样例，不是 Jev 算的（页面上会有橙色提示条）
@@ -65,7 +65,7 @@ npm run dev          # http://localhost:3000
 2. 让你在设置页确认 Worker 名字、资源名，并填写 `TYPESAFE_API_KEY`
 3. 用 Workers Builds 构建并部署，**自动创建并绑定 D1 数据库**（会读 `wrangler.jsonc` 里的声明）
 
-密钥是从 `.env.example` 里识别出来的 —— 那个文件里只留 `TYPESAFE_API_KEY` 一项需要填。
+密钥是从 `.dev.vars.example` 里识别出来的 —— 那个文件里只留 `TYPESAFE_API_KEY` 一项需要填。
 
 ### 方式二：本地命令行
 
@@ -76,16 +76,39 @@ npm run deploy:local
 
 `npm run deploy:local` 会自动：
 
-1. 读 `.env.local` 里的 `TYPESAFE_API_KEY`（没有就跳过上传，改用控制台配置）
+1. 读 `.dev.vars` 里的 `TYPESAFE_API_KEY`（没有就跳过上传，改用控制台配置）
 2. 检查登录状态
-3. 确认 D1 数据库存在，不存在就创建，并把 `database_id` 回填进 `wrangler.jsonc`
+3. 确认 D1 数据库存在（不存在就创建），把**真实的** `database_id` 写进
+   `wrangler.local.jsonc` —— 这个文件已 gitignore，**仓库里那份 `wrangler.jsonc` 保持占位值**
 4. 有 Key 就上传为 Worker secret
 5. 清理上次构建产物 → 构建 → 部署 → **自动请求一次线上 `/api/ready`**，
    当场告诉你数据库接没接上、模型配置就绪没就绪、是否误落在演示模式
 
+> **为什么要拆成两份 wrangler 配置**：`database_id` 是账号专属的，写进开源仓库会让别人
+> 点部署按钮时指向一个不存在的库；但本地部署又必须要有真实 id。一个文件满足不了，
+> 所以真实 id 放本地那份，`scripts/cf.mjs` 检测到它就带 `--config` 指过去。
+
+### 绑自定义域
+
+在 `.dev.vars` 里加一行，然后照常部署：
+
+```bash
+CUSTOM_DOMAIN=your-domain.com
+```
+
+`npm run deploy:local` 会把它写成一条 `routes`，写进 **gitignore 掉的 `wrangler.local.jsonc`** ——
+Cloudflare 会自动建 DNS 记录和证书。域名需已托管在同一个账号下。
+
+> **为什么不直接写在 `wrangler.jsonc` 里**：域名是账号专属的。写死在提交进仓库的那份配置里，
+> 别人点部署按钮时 Cloudflare 会试图把一个不属于他的域名挂上去，部署当场失败。
+> 仓库里那份就把 `routes` 注释掉了，只在本地这份里注入。
+
+> **为什么要绑**：`*.workers.dev` 在国内 DNS 被污染（解析到境外大厂的 IP 段），
+> 部署成功但打不开。只在境外访问的话不用管这一段。
+
 ### 密钥也可以只在控制台配
 
-`.env.local` 里的 Key 只是为了自动化上传，**不是必需的**：
+`.dev.vars` 里的 Key 只是为了自动化上传，**不是必需的**：
 
 > Workers & Pages → 选你的 Worker → Settings → **Variables and Secrets** →
 > **Runtime variables and secrets** → 添加 `TYPESAFE_API_KEY`，类型选 **Secret**。
@@ -94,7 +117,7 @@ npm run deploy:local
 - 注意作用环境：Production / Preview 的变量是分开的。
 - **别在线上配 `DEMO_MODE=true`。** 那样界面一切正常但数字不是算的 ——
   部署脚本和运行日志都会提示这一条。
-- `.env.local` 里有值时，`npm run deploy:local` 会**覆盖**控制台那份。想让控制台说了算，就把文件留空。
+- `.dev.vars` 里有值时，`npm run deploy:local` 会**覆盖**控制台那份。想让控制台说了算，就把文件留空。
 
 ---
 
@@ -170,7 +193,7 @@ src/
 │  └─ presentation.ts          # 颜色 / 文案 / 分享配文的唯一来源
 ├─ lib/
 │  ├─ typesafe/client.ts       # ★ Jev 类型化客户端（问题类型 → 答案类型的编译期映射）
-│  ├─ api-client.ts            # 浏览器侧 API 封装（4xx 不重试、5xx 重试 3 次）
+│  ├─ api-client.ts            # 浏览器侧 API 封装（4xx 不重试、5xx 重试 3 次、配置缺失不重试）
 │  └─ wechat-shot.ts           # 纯前端 canvas 生成聊天截图
 └─ server/
    ├─ config.ts                # ★ 环境变量唯一入口，惰性校验
@@ -235,8 +258,17 @@ src/
 ## 环境变量
 
 全部在 `src/server/config.ts` 集中校验，缺失或非法立刻报错，不会带病运行。
-`.env.local` / `.env.example` 只影响本地；线上的运行时变量来自 Cloudflare。
-完整清单见 `.env.example`。最常改的几个：
+`.dev.vars` / `.dev.vars.example` 只影响本地；线上的运行时变量来自 Cloudflare。
+
+**取值的优先级是「Cloudflare 运行时绑定 > `process.env`」，顺序不能反。**
+原因是踩过的坑：`next build` 会把构建当时 `process.env` 里的值**快照进服务端 bundle**
+（`.env.local` 里非 `NEXT_PUBLIC_` 的变量也会被带进去）。所以如果优先读 `process.env`，
+那么在本机跑过一次构建之后，`.env.local` 里的 `DEMO_MODE=true` 会一路渗进线上 ——
+Cloudflare 控制台里配好了 Key，线上却仍在返回演示数据，而且界面上看不出任何异常。
+这也是本项目**用 `.dev.vars` 而不是 `.env.local`** 的原因：前者由 wrangler 读取、
+经绑定进入运行时，不会被 `next build` 快照。
+
+完整清单见 `.dev.vars.example`。最常改的几个：
 
 | 变量 | 默认 | 作用 |
 | --- | --- | --- |
@@ -248,6 +280,7 @@ src/
 
 线上的非敏感项来自 `wrangler.jsonc` 的 `vars`；改密钥用
 `npx wrangler secret put TYPESAFE_API_KEY` 或在控制台改。
+随时打开 `/api/ready` 能确认线上读到的到底是哪一档配置。
 
 ---
 

@@ -21,8 +21,16 @@ import path from "node:path";
 import process from "node:process";
 
 const ROOT = process.cwd();
-const ENV_FILE = path.join(ROOT, ".env.local");
+/**
+ * 本地变量文件：用 wrangler 约定的 `.dev.vars`，**不要**用 `.env.local`。
+ * 因为 next build 会把 `.env.local` 的值快照进服务端 bundle，一路渗进线上。
+ */
+const ENV_FILE = path.join(ROOT, ".dev.vars");
+/** 老路径，仅作兜底兼容 */
+const LEGACY_ENV_FILE = path.join(ROOT, ".env.local");
 const WRANGLER_FILE = path.join(ROOT, "wrangler.jsonc");
+/** 本地专用的 wrangler 配置（已 gitignore），只比 wrangler.jsonc 多一个真实的 database_id */
+const LOCAL_WRANGLER_FILE = path.join(ROOT, "wrangler.local.jsonc");
 const OPEN_NEXT_DIR = path.join(ROOT, ".open-next");
 const DB_NAME = "huawaiyin-db";
 const SECRET_NAME = "TYPESAFE_API_KEY";
@@ -87,12 +95,19 @@ function isRealDatabaseId(value) {
  * 只提示一句，后面照样继续跑。
  */
 function readEnvFile() {
-  if (!existsSync(ENV_FILE)) {
-    console.log("  没有 .env.local，跳过（密钥将由控制台提供）。");
+  const target = existsSync(ENV_FILE)
+    ? ENV_FILE
+    : existsSync(LEGACY_ENV_FILE)
+      ? LEGACY_ENV_FILE
+      : null;
+
+  if (target === null) {
+    console.log("  没有 .dev.vars，跳过（密钥将由 Cloudflare 控制台提供）。");
     return {};
   }
+
   const env = {};
-  for (const rawLine of readFileSync(ENV_FILE, "utf8").split(/\r?\n/)) {
+  for (const rawLine of readFileSync(target, "utf8").split(/\r?\n/)) {
     const line = rawLine.trim();
     if (line === "" || line.startsWith("#")) continue;
     const eq = line.indexOf("=");
@@ -125,14 +140,30 @@ function ensureLoggedIn() {
 }
 
 // ── 3. D1 数据库 ────────────────────────────────────────────────────────────
-function ensureDatabase(config) {
+/**
+ * 确保 D1 数据库存在，并把**真实的** database_id 写进 `wrangler.local.jsonc`（已 gitignore）。
+ * 同时把 `.dev.vars` 里的 CUSTOM_DOMAIN（如果有）写成一条 routes。
+ *
+ * 为什么这两个值都不能留在 `wrangler.jsonc`：那份要提交进开源仓库，而 database_id 和
+ * 域名都是账号专属的 —— 别人克隆过去点部署按钮，会指向一个不存在的库、或一个不属于他的
+ * 域名，部署当场失败。一个文件没法同时满足「本地能部署」和「开源仓库要占位值」，
+ * 所以拆成两份，`scripts/cf.mjs` 检测到本地那份就用 `--config` 指过去。
+ */
+function ensureDatabase(customDomain) {
   log("3/5", `确认 D1 数据库 ${DB_NAME} 存在…`);
 
-  // 已经填好真实 id 就跳过，避免每次部署都查询一遍
-  const configured = /"database_id"\s*:\s*"([^"]+)"/.exec(config)?.[1];
-  if (configured && isRealDatabaseId(configured)) {
-    console.log(`  已配置：${configured}`);
-    return config;
+  const committed = readFileSync(WRANGLER_FILE, "utf8");
+
+  // 本地配置里已经有真实 id 就复用，省掉一次网络查询。
+  // 但自定义域变了要重新生成 —— 否则改了域名不生效，还很难看出为什么。
+  if (existsSync(LOCAL_WRANGLER_FILE)) {
+    const local = readFileSync(LOCAL_WRANGLER_FILE, "utf8");
+    const id = /"database_id"\s*:\s*"([^"]+)"/.exec(local)?.[1];
+    const domainMatches = !customDomain || local.includes(customDomain);
+    if (id && isRealDatabaseId(id) && domainMatches) {
+      console.log(`  复用本地配置里的：${id}`);
+      return;
+    }
   }
 
   const listed = run(npx, ["wrangler", "d1", "list", "--json"]);
@@ -142,8 +173,9 @@ function ensureDatabase(config) {
       const json = JSON.parse(listed.stdout.slice(listed.stdout.indexOf("[")));
       const hit = Array.isArray(json) ? json.find((db) => db.name === DB_NAME) : null;
       if (hit?.uuid) {
-        console.log(`  已存在，复用：${hit.uuid}`);
-        return patchConfig(config, hit.uuid);
+        console.log(`  账号里已存在，复用：${hit.uuid}`);
+        writeLocalWrangler(committed, hit.uuid, customDomain);
+        return;
       }
     } catch {
       console.log("  列表解析失败，改为直接尝试创建。");
@@ -161,21 +193,49 @@ function ensureDatabase(config) {
   if (!uuid) {
     fail(
       "创建成功但没解析出 database_id。",
-      "去 Cloudflare 控制台 D1 页面复制 ID，手动填进 wrangler.jsonc 的 database_id 再重跑。",
+      "去 Cloudflare 控制台 D1 页面复制 ID，手动填进 wrangler.local.jsonc 的 database_id 再重跑。",
     );
   }
   console.log(`  创建完成：${uuid}`);
-  return patchConfig(config, uuid);
+  writeLocalWrangler(committed, uuid, customDomain);
 }
 
-function patchConfig(config, uuid) {
-  const updated = config.replace(
-    /"database_id"\s*:\s*"[^"]*"/,
-    `"database_id": "${uuid}"`,
-  );
-  writeFileSync(WRANGLER_FILE, updated, "utf8");
-  console.log("  已写回 wrangler.jsonc");
-  return updated;
+/** 把真实 id（以及可选的自定义域）注入一份本地配置。提交进仓库的那份保持原样。 */
+function writeLocalWrangler(committedConfig, uuid, customDomain) {
+  const header = [
+    "// 本文件由 npm run deploy:local 自动生成，已 gitignore，**不要提交**。",
+    "// 内容 = wrangler.jsonc + 真实的 D1 database_id + .dev.vars 里的 CUSTOM_DOMAIN。",
+    "// 开源仓库里那份 wrangler.jsonc 必须保持占位值，否则别人点部署按钮会指向不存在的库、",
+    "// 或挂上一个不属于他的域名。",
+    "",
+  ].join("\n");
+
+  let body = committedConfig.replace(/"database_id"\s*:\s*"[^"]*"/, `"database_id": "${uuid}"`);
+
+  if (customDomain) {
+    const block = [
+      `  "routes": [`,
+      `    {`,
+      `      "pattern": "${customDomain}",`,
+      `      "custom_domain": true`,
+      `    }`,
+      `  ],`,
+      ``,
+    ].join("\n");
+    // 仓库里那份把 routes 注释掉了（避免别人部署时挂上别人的域名）。
+    // 这里要么替换已有的 pattern，要么在开头插一段新的 —— 两条路都不会留下重复。
+    //
+    // 两个正则都锚定行首（`^\s*"`）是必须的：被注释掉那段同样含有 `"routes":` 和
+    // `"pattern":`，不锚定的话会误命中注释，结果 routes 根本没插进去 —— 表现出来就是
+    // 「明明配了 CUSTOM_DOMAIN，部署完域名却没绑上」，且日志一行不错，极难发现。
+    body = /^\s*"routes"\s*:/m.test(body)
+      ? body.replace(/^(\s*)"pattern"\s*:\s*"[^"]*"/m, `$1"pattern": "${customDomain}"`)
+      : body.replace(/^(\{\s*\r?\n)/, `$1${block}`);
+    console.log(`  已带上自定义域：${customDomain}`);
+  }
+
+  writeFileSync(LOCAL_WRANGLER_FILE, header + body, "utf8");
+  console.log("  已写入 wrangler.local.jsonc（本地配置，不会提交）");
 }
 
 // ── 4. 上传密钥（可选） ─────────────────────────────────────────────────────
@@ -192,7 +252,7 @@ function ensureSecret(apiKey) {
     !apiKey || apiKey.startsWith("ts_live_xxx") || apiKey.startsWith("ts_live_...");
 
   if (looksLikePlaceholder) {
-    console.log("  .env.local 里没有可用的 Key，跳过上传。");
+    console.log("  .dev.vars 里没有可用的 Key，跳过上传。");
     console.log(
       "  请确认已在 Cloudflare 控制台配置：Worker → Settings → Variables and Secrets →\n" +
         `  Runtime variables and secrets 里加上 ${SECRET_NAME}（类型选 Secret）。`,
@@ -239,12 +299,22 @@ async function buildAndDeploy() {
   }
   console.log(deploy.stdout);
 
-  const url = /https:\/\/[^\s]+\.workers\.dev/.exec(deploy.stdout)?.[0];
+  // 部署输出里的地址有两种形态：workers.dev 带 https:// 前缀；
+  // 自定义域是裸域名后面跟一个 (custom domain) 标记。
+  const workersDev = /https:\/\/[^\s]+\.workers\.dev/.exec(deploy.stdout)?.[0];
+  const customDomain = /^\s+([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\s*\(custom domain\)/im.exec(
+    deploy.stdout,
+  )?.[1];
+  const url = workersDev ?? (customDomain ? `https://${customDomain}` : null);
+
   if (!url) {
     console.log("\n没从输出里解析到线上地址，去 Cloudflare 控制台的 Workers 列表里找。");
     return;
   }
   console.log(`\n\u001b[32m✓ 上线了：${url}\u001b[0m`);
+  if (customDomain) {
+    console.log("  （已绑自定义域。*.workers.dev 在国内 DNS 被污染，基本打不开）");
+  }
 
   await verifyRuntime(url);
 }
@@ -293,15 +363,11 @@ async function verifyRuntime(url) {
 }
 
 // ── 主流程 ──────────────────────────────────────────────────────────────────
-log("1/5", "读取 .env.local…");
+log("1/5", "读取本地变量（.dev.vars）…");
 const env = readEnvFile();
 if (!existsSync(WRANGLER_FILE)) fail("找不到 wrangler.jsonc。");
-let config = readFileSync(WRANGLER_FILE, "utf8");
 
 ensureLoggedIn();
-config = ensureDatabase(config);
+ensureDatabase(env.CUSTOM_DOMAIN?.trim() || "");
 ensureSecret(env[SECRET_NAME]);
 await buildAndDeploy();
-
-// config 在 ensureDatabase 里可能被改写（写回了 database_id），这里引用一次让它不被优化掉
-void config;

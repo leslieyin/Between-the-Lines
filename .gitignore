@@ -3,14 +3,20 @@ node_modules/
 .npm-cache/
 
 # next.js / opennext 构建产物
+# （.next-* / .open-next-* 是构建失败时挪到一边的坏缓存，同样不入库）
 .next/
+.next-*/
 out/
 .open-next/
+.open-next-*/
 next-env.d.ts
 tsconfig.tsbuildinfo
 
 # wrangler 本地状态（本地 D1 的 sqlite 就存在这里，不要提交）
 .wrangler/
+
+# 本地部署配置：由 npm run deploy:local 生成，内含真实的 D1 database_id（账号专属，不能公开）
+wrangler.local.jsonc
 
 # env —— 真实密钥绝不入库，只提交 .env.example
 .env

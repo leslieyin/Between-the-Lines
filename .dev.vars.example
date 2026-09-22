@@ -1,0 +1,51 @@
+# ─────────────────────────────────────────────────────────────
+# 话外音 · 环境变量样例
+#
+# 用法：复制为 .dev.vars（已 gitignore），填上真实值，然后 npm run dev。
+#
+# 为什么是 .dev.vars 而不是 .env.local：
+#   next build 会把构建当时 process.env 里的值**快照进服务端 bundle**，
+#   而 .env.local 会被 next build 读进 process.env —— 本地配置会一路渗进线上，
+#   表现是「Cloudflare 控制台里配好了 Key，线上却还在返回演示数据」，且看不出异常。
+#   .dev.vars 由 wrangler 读取、经 Cloudflare 绑定进入运行时，不会被快照。
+#   运行时取值的优先级是「Cloudflare 绑定 > process.env」（见 src/server/config.ts）。
+#
+# 部署到 Cloudflare 时，密钥有两条路，二选一：
+#   A) 填在本文件的 TYPESAFE_API_KEY，`npm run deploy:local` 会自动上传成 Worker secret
+#   B) 留空，改在 Cloudflare 控制台配：
+#      Worker → Settings → Variables and Secrets → Runtime variables and secrets
+#      → 添加 TYPESAFE_API_KEY（类型 Secret）。改完即生效，不用重新部署。
+#   注意 A 会覆盖控制台那份；想让控制台说了算，这里就留空。
+#
+# 一键部署按钮也会读这个文件，把里面的变量作为「部署时需要用户填的项」列在设置页上。
+# 所以这里**只留需要填的项**，其余非敏感配置统一由 wrangler.jsonc 的 vars 管理。
+# ─────────────────────────────────────────────────────────────
+
+# 【必填·二选一】TypeSafe API Key。只在服务端使用，绝不会出现在浏览器产物里。
+# 申请入口：https://typesafe.ai
+TYPESAFE_API_KEY=ts_live_xxxxxxxxxxxxxxxxxxxxxxxx
+
+# 【可选·本地】演示模式：不调真实模型，用内置样例跑通界面。
+# 本地想快速看效果时改成 true；**线上绝对不要设成 true**（界面正常但数字是假的）。
+# DEMO_MODE=false
+
+# 下面这些非敏感项在生产由 wrangler.jsonc 的 vars 管理，本地想覆盖再取消注释：
+# TYPESAFE_MODEL=jev-latest              # Jev 模型别名
+# TYPESAFE_BASE_URL=https://api.typesafe.ai/v1
+# ANALYZE_MAX_CHARS=8000                 # 单次粘贴的最大字符数
+# ANALYZE_MAX_LINES=40                   # 单次允许的最大行数
+# ANALYZE_MAX_ANALYZED_LINES=16          # 实际送去翻牌的最大句数（控制耗时与成本）
+# ANALYZE_GROUP_SIZE=4                   # 每个 Jev 请求里合并几句
+# RATE_LIMIT_PER_HOUR=20                 # 每设备每小时可分析次数
+# TYPESAFE_TIMEOUT_MS=60000              # 单次 Jev 请求超时（毫秒）
+
+# ─────────────────────────────────────────────────────────────
+# 部署相关（只被 `npm run deploy:local` 读取，不影响运行时）
+# ─────────────────────────────────────────────────────────────
+
+# 【可选·部署】要绑定的自定义域。域名需已托管在同一个 Cloudflare 账号下。
+# 写了它，部署时会自动生成一条 routes（写进 gitignore 的 wrangler.local.jsonc）。
+# 为什么不在 wrangler.jsonc 里写死：域名是账号专属的，写进开源仓库会让别人点部署按钮时
+# 挂上一个不属于他的域名，部署当场失败。
+# 国内访问建议一定要绑 —— *.workers.dev 的 DNS 在国内被污染，部署成功也打不开。
+# CUSTOM_DOMAIN=your-domain.com

@@ -10,6 +10,7 @@ export type ErrorCode =
   | "INVALID_INPUT"
   | "NOT_FOUND"
   | "RATE_LIMITED"
+  | "CONFIG_MISSING"
   | "UPSTREAM_UNAVAILABLE"
   | "UPSTREAM_AUTH"
   | "TIMEOUT"

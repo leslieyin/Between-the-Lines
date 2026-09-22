@@ -11,14 +11,31 @@
   "observability": {
     "enabled": true
   },
+
+  // ── 自定义域 ──────────────────────────────────────────────────────────────
+  // 仓库里**故意不带** routes：域名是账号专属的，写死在这里的话，别人点部署按钮时
+  // Cloudflare 会试图把一个不属于他账号的域名挂上去，部署直接失败。
+  //
+  // 自己部署时：在 .dev.vars 里写一行 CUSTOM_DOMAIN=你的域名（域名需已托管在同一
+  // Cloudflare 账号下），`npm run deploy:local` 会自动把它写进 wrangler.local.jsonc。
+  //
+  // 为什么值得绑：*.workers.dev 在国内 DNS 被污染，部署成功也打不开。
+  // 不需要自定义域（比如只在境外访问）就不用管这一段。
+  // "routes": [
+  //   { "pattern": "your-domain.com", "custom_domain": true }
+  // ],
+
+  // database_id 是占位值：真实的 id 是账号专属的，不能写进开源仓库。
+  // 首次部署时 deploy 脚本（或 Cloudflare 一键部署流程）会创建数据库并把真实 id 写回这里；
+  // 手填的话去控制台 D1 页面复制 UUID。
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "huawaiyin-db",
-      "_comment_database_id": "占位值。首次部署时 deploy 脚本（或 Cloudflare 一键部署流程）会创建数据库并把真实 id 写回这里。手填的话去控制台 D1 页面复制 UUID。",
       "database_id": "00000000-0000-0000-0000-000000000000"
     }
   ],
+
   "vars": {
     "TYPESAFE_MODEL": "jev-latest",
     "TYPESAFE_BASE_URL": "https://api.typesafe.ai/v1",

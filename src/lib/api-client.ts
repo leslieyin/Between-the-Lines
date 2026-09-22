@@ -64,7 +64,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       const code = payload && payload.ok === false ? payload.error.code : `HTTP_${status}`;
       const requestId = payload && payload.ok === false ? payload.error.requestId : undefined;
 
-      if (RETRYABLE_STATUS.has(status) && attempt < MAX_ATTEMPTS - 1) {
+      // 配置缺失返回 503，但它不会在几秒内自愈（要人去控制台填 Key），重试只是白等
+      const isFatal = code === "CONFIG_MISSING";
+      if (RETRYABLE_STATUS.has(status) && !isFatal && attempt < MAX_ATTEMPTS - 1) {
         await sleep(400 * 2 ** attempt);
         continue;
       }
