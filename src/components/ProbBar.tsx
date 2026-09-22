@@ -10,6 +10,12 @@ type Props = {
   /** 只显示前几项，其余折叠 */
   maxVisible?: number;
   accent?: string;
+  /**
+   * 命中项文字的上色（情绪类型色）。不传就走默认墨色。
+   * 只给「她真正想说的」用 —— 那一行的文字本身就是一个情绪标签，
+   * 其余维度（她需要什么、建议怎么做）保持中性，否则满屏都是颜色，反而没有重点。
+   */
+  labelColor?: string;
 };
 
 /**
@@ -26,6 +32,7 @@ export function ProbBar({
   labels,
   maxVisible = 4,
   accent = "var(--color-gold)",
+  labelColor,
 }: Props) {
   const ranked = rankedProbabilities(probabilities, labels);
   const top = ranked.find((r) => r.key === topKey) ?? ranked[0];
@@ -35,7 +42,17 @@ export function ProbBar({
   return (
     <div className="mt-1.5">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[14.5px] leading-snug text-ink">{topLabel}</span>
+        <span
+          className="text-[14.5px] leading-snug text-ink"
+          style={labelColor ? { color: labelColor } : undefined}
+        >
+          {labelColor && (
+            <span className="mr-1.5" aria-hidden style={{ color: labelColor }}>
+              ●
+            </span>
+          )}
+          {topLabel}
+        </span>
         <span className="tabnum shrink-0 font-display text-[13px]" style={{ color: accent }}>
           {Math.round(topValue * 100)}%
         </span>

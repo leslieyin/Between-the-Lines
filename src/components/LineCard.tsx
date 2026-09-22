@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import { DangerMeter } from "@/components/DangerMeter";
 import { ProbBar } from "@/components/ProbBar";
 import { LABELS } from "@/features/analyze/prompts";
-import { confidenceNote, dangerMeta } from "@/features/analyze/presentation";
+import { confidenceNote, dangerMeta, emotionColor } from "@/features/analyze/presentation";
 import type { LineAnalysis } from "@/features/analyze/types";
 
 type Props = {
@@ -74,6 +74,7 @@ export function LineCard({ line, ordinal, delayMs }: Props) {
             probabilities={line.intent.probabilities}
             labels={LABELS.intent}
             accent={meta.color}
+            labelColor={emotionColor(line.intent.key).page}
           />
           {intentNote && <Note text={intentNote} />}
         </Field>

@@ -13,7 +13,7 @@
  * 这一段只在不破坏微信观感的前提下做精致化：间距、字体层级、解读卡留白、危险色竖条。
  */
 
-import { dangerMeta } from "@/features/analyze/presentation";
+import { dangerMeta, emotionColor } from "@/features/analyze/presentation";
 import type { LineAnalysis, ParsedLine } from "@/features/analyze/types";
 
 const WIDTH = 750;
@@ -37,10 +37,18 @@ const COLORS = {
   dayPill: "#c9c9c9",
 };
 
+/**
+ * 解读卡里的每一行都带上「这是哪一类」—— 长图是白底的，
+ * 只能靠颜色区分轻重，所以行必须自带类别，画的时候才知道该上什么色。
+ */
+type NoteKind = "flag" | "intent" | "need" | "move";
+
+type NoteRow = { text: string; kind: NoteKind };
+
 type Item =
   | { kind: "day"; label: string; height: number }
   | { kind: "msg"; speaker: ParsedLine["speaker"]; text: string; height: number; rows: string[] }
-  | { kind: "note"; analysis: LineAnalysis; height: number; rows: string[] };
+  | { kind: "note"; analysis: LineAnalysis; height: number; rows: NoteRow[] };
 
 function font(size: number, weight: "400" | "500" | "600" = "400"): string {
   return `${weight} ${size}px ${FONT_STACK}`;
@@ -150,19 +158,28 @@ export async function renderChatShot(input: ShotInput): Promise<Blob> {
 
     const analysis = analysisByIndex.get(line.index);
     if (analysis && !analysis.failed) {
-      const noteRows = [
+      const wrapped: NoteRow[] = [];
+      const push = (text: string, kind: NoteKind, width: number, weight: "400" | "500" | "600" = "400") => {
+        for (const row of wrap(ctx, text, width, 14, weight)) {
+          wrapped.push({ text: row, kind });
+        }
+      };
+
+      if (analysis.isIronic >= 0.5) {
+        push(`⚑ 这句要反着听（${Math.round(analysis.isIronic * 100)}%）`, "flag", BUBBLE_MAX - 36, "600");
+      }
+      // 情绪类型：单独上色 + 左侧色点，让人一眼扫出「她这句是什么情绪」
+      push(
         `她真正想说的：${analysis.intent.label}（${Math.round(
           (analysis.intent.probabilities[analysis.intent.key] ?? 0) * 100,
         )}%）`,
-        `她此刻需要：${analysis.need.label}`,
-        `建议动作：${analysis.move.label}`,
-      ];
-      const wrapped = noteRows.flatMap((row) => wrap(ctx, row, BUBBLE_MAX - 36, 14));
-      if (analysis.isIronic >= 0.5) {
-        wrapped.unshift(
-          ...wrap(ctx, `⚑ 这句要反着听（${Math.round(analysis.isIronic * 100)}%）`, BUBBLE_MAX - 36, 14, "600"),
-        );
-      }
+        "intent",
+        BUBBLE_MAX - 14, // 左边给色点让出 14px，所以可写宽度比正文窄一点
+        "600",
+      );
+      push(`她此刻需要：${analysis.need.label}`, "need", BUBBLE_MAX - 36);
+      push(`建议动作：${analysis.move.label}`, "move", BUBBLE_MAX - 36, "600");
+
       items.push({
         kind: "note",
         analysis,
@@ -291,7 +308,7 @@ export async function renderChatShot(input: ShotInput): Promise<Blob> {
     ctx.stroke();
 
     // 左侧危险等级竖条：圆角挖空式（只画左端一小段，不超出卡片圆角）
-    ctx.fillStyle = meta.color;
+    ctx.fillStyle = meta.shot;
     roundRect(ctx, cardX, y + 6, 5, cardH, 3);
     ctx.fill();
 
@@ -301,18 +318,48 @@ export async function renderChatShot(input: ShotInput): Promise<Blob> {
     ctx.textAlign = "left";
     ctx.fillText("懂你 · AI 解读", cardX + 18, y + 28);
 
-    ctx.fillStyle = meta.color;
+    ctx.fillStyle = meta.shot;
     ctx.textAlign = "right";
     ctx.font = font(11, "600");
     ctx.fillText(meta.short, cardX + cardW - 18, y + 28);
 
-    // 正文
+    // 正文：情绪类型上色 + 色点，建议动作走金色，其余保持正文黑
+    const emotion = emotionColor(item.analysis.intent.key).shot;
+    const firstIntent = item.rows.findIndex((r) => r.kind === "intent");
+
     ctx.textAlign = "left";
     item.rows.forEach((row, i) => {
-      const isFlag = row.startsWith("⚑");
-      ctx.fillStyle = isFlag ? meta.color : COLORS.text;
-      ctx.font = font(14, isFlag ? "600" : "400");
-      ctx.fillText(row, cardX + 18, y + 54 + i * CARD_LINE_HEIGHT);
+      const baseline = y + 54 + i * CARD_LINE_HEIGHT;
+
+      if (row.kind === "intent") {
+        ctx.fillStyle = emotion;
+        ctx.font = font(14, "600");
+        if (i === firstIntent) {
+          ctx.beginPath();
+          ctx.arc(cardX + 21, baseline - 5, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillText(row.text, cardX + 32, baseline);
+        return;
+      }
+
+      if (row.kind === "move") {
+        ctx.fillStyle = COLORS.gold;
+        ctx.font = font(14, "600");
+        ctx.fillText(row.text, cardX + 18, baseline);
+        return;
+      }
+
+      if (row.kind === "flag") {
+        ctx.fillStyle = meta.shot;
+        ctx.font = font(14, "600");
+        ctx.fillText(row.text, cardX + 18, baseline);
+        return;
+      }
+
+      ctx.fillStyle = COLORS.text;
+      ctx.font = font(14, "400");
+      ctx.fillText(row.text, cardX + 18, baseline);
     });
 
     y += item.height;
