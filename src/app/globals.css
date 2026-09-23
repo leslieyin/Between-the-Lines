@@ -44,6 +44,15 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* 表单控件统一去掉浏览器默认边框。
+   默认边框不受 Tailwind 的 outline-none 影响，会跟外面容器的描边叠成「双层边框」；
+   中性色也不跟随主题，在深紫底上会显得脏。样式一律由各组件显式给。 */
+textarea,
+input {
+  border: 0;
+  background: transparent;
+}
+
 /* 夜色底纹：两团极淡的金光 + 一层细网格。存在感必须低，不能抢正文。 */
 body::before {
   content: "";
